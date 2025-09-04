@@ -9,8 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { deletePoll } from "@/app/lib/actions/poll-actions";
-import { createClient } from "@/lib/supabase/client";
+import { deletePollAdmin, getAllPollsAdmin, checkAdminAccess } from "@/app/lib/actions/poll-actions";
 
 interface Poll {
   id: string;
@@ -24,38 +23,70 @@ export default function AdminPage() {
   const [polls, setPolls] = useState<Poll[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleteLoading, setDeleteLoading] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchAllPolls();
+    checkAccess();
   }, []);
 
+  const checkAccess = async () => {
+    const adminCheck = await checkAdminAccess();
+    if (adminCheck.error) {
+      setError(adminCheck.error);
+      setLoading(false);
+      return;
+    }
+    
+    if (!adminCheck.isAdmin) {
+      setError("Access denied. Admin privileges required.");
+      setLoading(false);
+      return;
+    }
+    
+    setIsAdmin(true);
+    fetchAllPolls();
+  };
+
   const fetchAllPolls = async () => {
-    const supabase = createClient();
-
-    const { data, error } = await supabase
-      .from("polls")
-      .select("*")
-      .order("created_at", { ascending: false });
-
-    if (!error && data) {
-      setPolls(data);
+    const result = await getAllPollsAdmin();
+    
+    if (result.error) {
+      setError(result.error);
+    } else {
+      setPolls(result.polls);
+      setError(null);
     }
     setLoading(false);
   };
 
   const handleDelete = async (pollId: string) => {
     setDeleteLoading(pollId);
-    const result = await deletePoll(pollId);
+    const result = await deletePollAdmin(pollId);
 
-    if (!result.error) {
+    if (result.error) {
+      setError(result.error);
+    } else {
       setPolls(polls.filter((poll) => poll.id !== pollId));
+      setError(null);
     }
 
     setDeleteLoading(null);
   };
 
   if (loading) {
-    return <div className="p-6">Loading all polls...</div>;
+    return <div className="p-6">Loading...</div>;
+  }
+
+  if (error && !isAdmin) {
+    return (
+      <div className="p-6">
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold text-red-600">Access Denied</h1>
+          <p className="text-gray-600 mt-2">{error}</p>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -65,6 +96,11 @@ export default function AdminPage() {
         <p className="text-gray-600 mt-2">
           View and manage all polls in the system.
         </p>
+        {error && (
+          <div className="mt-4 p-4 bg-red-100 border border-red-400 text-red-700 rounded">
+            {error}
+          </div>
+        )}
       </div>
 
       <div className="grid gap-4">
